@@ -1,0 +1,201 @@
+---
+title: "Structural Equation Modeling Demonstration"
+author: "Kathryn Brook"
+date: "2026-04-04"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Structural Equation Modeling (SEM)
+
+Today, we'll be demonstrating structural equation modeling (SEM). First, let's load these required packages.
+
+```{r}
+# Required Packages
+require(tidyverse)
+library(lavaan) # This is the specific package needed for SEM! It also needed for the dataset
+library(semPlot) # Useful for plotting SEM
+
+# The packages for each assumption will be listed in the respective R code
+
+```
+
+### Step 1: Load and Explore the Data
+
+We'll be using the Bollen (1989) Political Democracy dataset. For more information about the dataset, feel free to look at the SEM powerpoint OR use the code below (removing the \#). Remember, these are our research questions:
+
+1.  **Does a country's industrialization level affect its political democracy in 1960?**
+2.  **Do political democracy and industrialization in 1960 predict its political democracy in 1965?**
+
+```{r}
+data(PoliticalDemocracy) # you'll need to click on the right where it says "promise" for the dataset to load
+
+dataset <- PoliticalDemocracy # renaming the variable to make it easier
+
+# ?PoliticalDemocracy
+# ?HolzingerSwineford1939 -> remove # if you'd like to learn more about the dataset, but it's another SEM dataset that can be helpful!
+
+# Take a look at the dataset
+head(dataset)
+summary(dataset)
+
+```
+
+### Step 2: Perform SEM Analysis
+
+I used Rosseel & Vidal's (2025) article explaining the math behind SEM in the Bollen (1989) dataset to create the code below. I recommend looking at their Appendix B for more information! Click here to learn more: <https://bpspsychub.onlinelibrary.wiley.com/doi/epdf/10.1111/bmsp.70003>
+
+```{r}
+# Run SEM Analysis
+# SOME NOTES:
+# putting =~ means we are creating a measurement; ~ means regression; ~~ means covariance; a* means we are labeling a parameter
+
+# example: dem60 =~ y1 + a*y2 means we are labeling the regression of y2 on dem60 as "a"
+
+model <- '
+# latent variable definitions
+ind60 =~ x1 + x2 + x3
+dem60 =~ y1 + a*y2 + b*y3 + c*y4
+dem65 =~ y5 + a*y6 + b*y7 + c*y8
+
+# regressions; this is the structural model!
+dem60 ~ ind60
+dem65 ~ ind60 + dem60
+
+# residual correlations
+y1 ~~ y5
+y2 ~~ y4 + y6
+y3 ~~ y7
+y4 ~~ y8
+y6 ~~ y8
+'
+
+fit <- sem(model, data = dataset) # fit the model to your data
+summary(fit, fit.measures = TRUE, standardized = TRUE)
+```
+
+### Step 3: Check Assumptions
+
+Now that we've run the SEM model, we want to make sure the assumptions are met. Let's go one by one!
+
+#### Multivariate Normality
+
+We want to make sure that not only the variables themselves are normal, but also their combinations.
+
+```{r}
+library(MVN) # assesses multivariate normality
+mvn(dataset, mvn_test = "mardia") # If violated, use a robust estimator
+
+# When we investigate fit, we'll want to make sure to use a robust estimator because our data is not normal!
+```
+
+In our dataset, the multivariate normality is violated. Therefore, when we investigate fit in a later step, we'll want to make sure we use a robust estimator!
+
+#### Linearity
+
+We need to make sure our data is linear! To do this, let's examine what the pairs look like in our dataset.
+
+```{r}
+pairs(dataset) # looks like very roughly, we have linear data!
+
+```
+
+Based on a very rough glance at our dataset, we will assume that the assumption of linearity is met.
+
+#### Multicollinearity
+
+There's not an easy way to assess multicollinearity, as the VIF function from the car package is not compatible with lavaan objects. However, several websites suggested using this method as a workaround, but take it with a grain of salt!
+
+```{r}
+# Assess Correlations
+cor(dataset)
+# some are pretty high, so want to assess VIFs
+
+# VIF Method
+library(car)
+# Create random dummy data
+dataset$dummy <- rnorm(nrow(dataset))
+# Fit a linear model using your SEM predictors
+check_mod <- lm(dummy ~ x1 + x2 + x3 + y1 + y2 + y3 + y4 + y5 + y6 + y7 + y8, data = dataset)
+vif(check_mod)
+
+dataset$dummy <- NULL # removing dummy so it doesn't mess up our stuff!
+```
+
+All of the VIFs are less than 10, so the assumption is met!
+
+#### No Systematic Missing Data
+
+This is one of those assumptions where you just have to investigate your data. That does not appear to be an issue with this dataset, so the assumption is met.
+
+#### Sample Size
+
+We want to make sure we have a sufficiently large sample size. To do this, we'll follow the advice of Kline (2023) and use the **N:q ratio**, which is the ratio of the number of participants to the number of statistical estimates. The general rule of thumb is to have a **20:1 ratio.**
+
+According to our omnibus output, the number of model parameters was **31**.
+
+We also have **75** observations. Let's see how many we need to meet the ratio.
+
+```{r}
+31*20 # we needed 620 participants
+
+# 75 < 620
+
+```
+
+Wow, we do NOT meet this assumption. HOWEVER, because this is for illustrative purposes, we're going to move forward anyways.
+
+#### Model Specification
+
+We want to make sure when conducting SEM that ALL relevant variables have been included. Otherwise, we may have a **specification error**, which is when relevant variables are omitted. That's not a problem here because all variables were included, so this assumption is met.
+
+#### Independence of Observations
+
+Again, this is one of those assumptions that involves looking at your study design. In this dataset, all participants had one observation for each variable, and we have no reason to believe they are related to each other. Therefore, the assumption is met.
+
+#### Extreme Outliers
+
+This is not an official assumption, but it's always good to check.
+
+```{r}
+library(performance)
+check_outliers(dataset)
+```
+
+No extreme outliers were detected, so the assumption is met!
+
+### Step 4: Investigate the Model
+
+Now that we've assessed our assumptions, let's look at investigate the model. We'll want to look at model fit, as well as the results of the regressions.
+
+```{r}
+fit2 <- sem(model, data = dataset, estimator = "MLR") # using MLR because it is a robust fit for normality
+summary(fit2, fit.measures = TRUE, standardized = TRUE) # this is the normal R output
+
+library(semoutput)
+sem_tables(fit2) # this is the easier to understand/interpret output! I recommend using this when trying to understand the data. If you need particular values not covered in this version, then use the normal lavaan version
+```
+
+### Step 5: Visualize the Model
+
+Let's take a look at what this looks like visually to see what we're working with!
+
+```{r}
+semPaths(object = fit2,
+         whatLabels = "std",    # show standardized coefficients
+         nCharNodes = 0,        # do not abbreviate node names
+         edge.color = "black",  # makes the arrows black
+         color = "white",       # makes the color white
+         sizeMan = 5,           # makes size of observed variables = 5
+         sizeLat = 10,          # makes size of latent variables = 10
+         rotation = 4,          # horizontal position for graph
+         curvePivot = TRUE,     # curves arrows so they don't overlap
+         layout = "tree2")      # tree layout
+```
+
+### Step 6: Interpret
+
+That's all, folks! For instructions on how to interpret the SEM outputs and graph, take a look at my accompanying presentation. Thanks everyone!
